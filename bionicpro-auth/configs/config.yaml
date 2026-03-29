@@ -1,0 +1,15 @@
+port: ":8000"
+keycloakURL: "http://localhost:8080"
+keycloakExternalURL: "http://localhost:8080"
+keycloakRealm: "reports-realm"
+sessionCookieName: "BIONICPRO_SESSION"
+stateTTLSeconds: 300s
+sessionTTLSeconds: 1800s
+cleanupPeriodSeconds: 300s
+clientID: "reports-frontend"
+clientSecret: "change-me"
+frontendURL: "http://localhost:3000"
+apiBaseURL: "http://localhost:8001"
+reportServiceURL: "http://localhost:8002"
+logger:
+  level: info
