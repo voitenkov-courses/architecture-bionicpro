@@ -23,6 +23,7 @@ import (
 )
 
 type Server struct {
+	host         string
 	port         string
 	server       *http.Server
 	auth         *auth.AuthContext
@@ -39,11 +40,13 @@ type Logger interface {
 	Warn(msg ...interface{})
 	Warnf(format string, args ...interface{})
 	Debug(msg ...interface{})
+	LogHTTPRequest(request *http.Request, duration time.Duration, statusCode int)
 }
 
 func NewServer(cfg *config.Config, auth *auth.AuthContext, logger Logger, randomSource *rand.Rand, sessionStore *session.SessionStore) *Server {
 	return &Server{
-		port:         cfg.Port,
+		host:         cfg.Server.Host,
+		port:         cfg.Server.Port,
 		auth:         auth,
 		logger:       logger,
 		randomSource: randomSource,
@@ -57,17 +60,20 @@ func (s *Server) Start(ctx context.Context, host string) error {
 	// Health-check handler
 	router.HandleFunc("/health", s.healthcheckHandler).Methods("GET")
 
-	// Все запросы /api/* проксируются к downstream-сервисам с Bearer Token
-	router.HandleFunc("/api", s.proxyHandler).Methods("GET")
-	router.HandleFunc("/api", s.proxyHandler).Methods("POST")
+	// Все запросы /api/reports проксируются к downstream-сервисам с Bearer Token
+	router.HandleFunc("/api/reports", s.proxyHandler).Methods("GET")
+	router.HandleFunc("/api/reports", s.proxyHandler).Methods("POST")
 
 	// Authorization handlers
 	router.HandleFunc("/auth/login", s.loginHandler).Methods("GET")
 	router.HandleFunc("/auth/callback", s.callbackHandler).Methods("GET")
-	router.HandleFunc("/auth/logout", s.logoutHandler).Methods("GET")
+	router.HandleFunc("/auth/logout", s.logoutHandler).Methods("POST")
+
+	// Add logging middleware
+	router.Use(s.loggingMiddleware)
 
 	server := &http.Server{
-		Addr:              net.JoinHostPort(host, s.port),
+		Addr:              net.JoinHostPort(s.host, s.port),
 		Handler:           router,
 		ReadHeaderTimeout: time.Second * 5,
 		BaseContext:       func(_ net.Listener) context.Context { return ctx },
@@ -82,10 +88,10 @@ func (s *Server) Start(ctx context.Context, host string) error {
 		}
 	}()
 
-	s.logger.Info("Auth server (BFF): http://" + net.JoinHostPort(host, s.port))
-	s.logger.Infof("Keycloack: %v/%v/", s.auth.Cfg.KeycloakURL, s.auth.Cfg.KeycloakRealm)
+	s.logger.Info("Auth server (BFF): http://" + net.JoinHostPort(s.host, s.port))
+	s.logger.Infof("Keycloack: %v/realms/%v/", s.auth.Cfg.KeycloakURL, s.auth.Cfg.KeycloakRealm)
 	s.logger.Infof("Frontend: %v", s.auth.Cfg.FrontendURL)
-	s.logger.Info("Callback: http://" + net.JoinHostPort(host, s.port) + "/auth/callback")
+	s.logger.Info("Callback: http://" + net.JoinHostPort(s.host, s.port) + "/auth/callback")
 
 	<-ctx.Done()
 	return nil
@@ -102,21 +108,11 @@ func (s *Server) healthcheckHandler(w http.ResponseWriter, r *http.Request) {
 
 // GET/POST /api/**
 func (s *Server) proxyHandler(w http.ResponseWriter, r *http.Request) {
-	// Центральный handler BFF. При каждом запросе:
-	//
-	// 1. Извлекает session_id из куки
-	// 2. Атомарно получает и удаляет сессию (getAndRemove)
-	// 3. Если access_token истёк — обновляет через refresh_token
-	// 4. Генерирует новый session_id (ротация — session fixation protection)
-	// 5. Сохраняет сессию под новым session_id
-	// 6. Проксирует запрос к downstream API с Authorization: Bearer <token>
-	// 7. Возвращает ответ клиенту с обновлённой кукой
-
 	// 1. Извлекаем session_id из куки
 	cookie, err := r.Cookie(s.auth.Cfg.SessionCookieName)
 	if err != nil {
 		s.logger.Errorf("No session cookie: %v", err)
-		http.Error(w, "No session cookie", http.StatusNotFound)
+		http.Error(w, "No session cookie", http.StatusUnauthorized)
 		return
 	}
 

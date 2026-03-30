@@ -13,7 +13,7 @@ import (
 )
 
 type Config struct {
-	Port                 string        `yaml:"port"`
+	Server               ServerConf    `yaml:"server"`
 	KeycloakURL          string        `yaml:"keycloakURL"`
 	KeycloakExternalURL  string        `yaml:"keycloakExternalURL"`
 	KeycloakRealm        string        `yaml:"keycloakRealm"`
@@ -26,11 +26,17 @@ type Config struct {
 	FrontendURL          string        `yaml:"frontendURL"`
 	APIBaseURL           string        `yaml:"apiBaseURL"`
 	ReportServiceURL     string        `yaml:"reportServiceURL"`
-	Logger               LoggerConf
+	CallbackURL          string        `yaml:"callbackURL"`
+	Logger               LoggerConf    `yaml:"logger"`
+}
+
+type ServerConf struct {
+	Host string `yaml:"host"`
+	Port string `yaml:"port"`
 }
 
 type LoggerConf struct {
-	Level string
+	Level string `yaml:"level"`
 }
 
 func NewConfig() *Config {

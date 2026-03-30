@@ -27,7 +27,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&configFile, "config", "../../configs/config.yaml", "Path to configuration file")
+	flag.StringVar(&configFile, "config", "/etc/auth-service/config.yaml", "Path to configuration file")
 	randomSource = rand.New(rand.NewPCG(1, 2))
 }
 
@@ -42,7 +42,11 @@ func main() {
 	logg := logger.New(cfg.Logger.Level)
 	authContext := auth.NewAuthContext(cfg)
 
-	authContext.InitOIDC(host)
+	err = authContext.InitOIDC(host)
+	if err != nil {
+		logg.Error("Failed to initialize OIDC Provider: " + err.Error())
+		os.Exit(1)
+	}
 
 	sessionStore := session.New(cfg.StateTTLSeconds, cfg.SessionTTLSeconds)
 	server := internalhttp.NewServer(cfg, authContext, logg, randomSource, sessionStore)

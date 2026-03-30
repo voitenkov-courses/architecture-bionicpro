@@ -31,7 +31,7 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["user"]
+        "realmRoles": ["user","offline_access"]
       },
       {
         "username": "user2",
@@ -46,7 +46,7 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["user"]
+        "realmRoles": ["user","offline_access"]
       },
       {
         "username": "admin1",
@@ -61,7 +61,7 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["administrator"]
+        "realmRoles": ["administrator","offline_access"]
       },
       {
         "username": "prothetic1",
@@ -76,7 +76,7 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["prothetic_user"]
+        "realmRoles": ["prothetic_user","offline_access"]
       },
       {
         "username": "prothetic2",
@@ -91,7 +91,7 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["prothetic_user"]
+        "realmRoles": ["prothetic_user","offline_access"]
       },
       {
         "username": "prothetic3",
@@ -106,20 +106,24 @@
             "temporary": false
           }
         ],
-        "realmRoles": ["prothetic_user"]
+        "realmRoles": ["prothetic_user","offline_access"]
       }
     ],
     "clients": [
       {
         "clientId": "reports-frontend",
         "enabled": true,
-        "publicClient": true,
-        "redirectUris": ["http://localhost:3000/*"],
+        "publicClient": false,
+        "clientAuthenticatorType": "client-secret",
+        "secret": "change-me",
+        "redirectUris": ["http://localhost:8000/auth/callback"],
         "webOrigins": ["http://localhost:3000"],
-        "directAccessGrantsEnabled": true,
+        "directAccessGrantsEnabled": false,
+        "standardFlowEnabled": true,
         "attributes": {
-          "pkce.code.challenge.method": "S256"        
-        }
+          "pkce.code.challenge.method": "S256",
+          "post.logout.redirect.uris": "http://localhost:3000"
+        }        
       },
       {
         "clientId": "reports-api",
