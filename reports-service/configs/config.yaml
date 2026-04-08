@@ -1,0 +1,16 @@
+server:
+  host: reports-service
+  port: "8001"
+storage:
+  host: "olap_db"
+  port: "9440"
+  db: "default"
+  table: "user_reports"
+cdn:
+  s3Endpoint: "http://minio:9000"
+  s3AccessKey: "minio_user"
+  s3SecretKey: "minio_password"
+  baseURL: "/cdn"
+  bucket: "reports"
+logger:
+  level: debug

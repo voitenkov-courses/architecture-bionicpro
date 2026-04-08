@@ -1,9 +1,5 @@
 import React, { useState } from 'react';
 
-interface UserReport {
-
-}
-
 type PageState = 'idle' | 'loading' | 'success' | 'error' | 'not-found' | 'unauthenticated';
 
 const ReportPage: React.FC = () => {
@@ -27,15 +23,39 @@ const ReportPage: React.FC = () => {
     try {
       setState('loading');
       setError(null);
+      setReport(null);
 
-      const response = await fetch(`/api/reports`, {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/reports/myreports`, {
+        method: 'GET',
         credentials: 'include',
+        headers: {
+            'Accept': 'application/json'
+          }
       });
 
       if (response.ok) {
-          const data: UserReport = await response.json();
-          setReport(data);
+          const { url } = await response.json();
           setState('success');
+        
+          const fileResp = await fetch(url, {
+              method: 'GET'
+          });
+
+          if (!fileResp.ok) {
+              throw new Error(`Download failed with status ${fileResp.status}`);
+          }
+
+          const blob = await fileResp.blob();
+          const objectUrl = window.URL.createObjectURL(blob);
+          const filename = url.split('/').pop() || 'usage-report.md';
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(objectUrl);
+
       } else if (response.status === 401) {
           setState('unauthenticated');
       } else if (response.status === 404) {
@@ -103,9 +123,17 @@ const ReportPage: React.FC = () => {
             {error}
           </div>
         )}
+
       </div>
     </div>
   );
 };
+
+const Stat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+    <div className="bg-gray-50 rounded-lg p-3">
+        <p className="text-xs text-gray-500">{label}</p>
+        <p className="text-lg font-semibold text-gray-900">{value}</p>
+    </div>
+);
 
 export default ReportPage;

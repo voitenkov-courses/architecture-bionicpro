@@ -3,3 +3,5 @@ postgres-airflow-data
 postgres-crm-data
 clickhouse-data
 *.pyc
+.DS_Store
+*.bkp

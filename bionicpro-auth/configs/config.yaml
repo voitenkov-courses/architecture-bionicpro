@@ -11,8 +11,9 @@ cleanupPeriodSeconds: 300s
 clientID: "reports-frontend"
 clientSecret: "change-me"
 frontendURL: "http://localhost:3000"
-apiBaseURL: "http://report-service:8001"
-reportServiceURL: "http://report-service:8001"
+apiBaseURL: "http://reports-service:8001"
+reportServiceURL: "http://reports-service:8001"
 callbackURL: http://localhost:8000/auth/callback
+allowedOrigins: ["http://localhost:3000","http://auth-service:8000"]
 logger:
   level: debug

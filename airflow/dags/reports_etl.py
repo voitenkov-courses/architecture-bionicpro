@@ -18,12 +18,10 @@ def check_sources(**context):
     result = ch.execute("SELECT 1")
     assert result == [(1,)], "ClickHouse health check failed"
 
-    # Проверяем, что таблица телеметрии содержит данные
     count = ch.execute("SELECT count() FROM emg_sensor_data")
     sensor_rows = count[0][0]
-    assert sensor_rows > 0, "emg_sensor_data is empty — нет данных телеметрии"
+    assert sensor_rows > 0, "emg_sensor_data is empty"
 
-    # CRM PostgreSQL
     conn = psycopg2.connect(
         host=CRM_HOST, port=CRM_PORT,
         dbname=CRM_DB, user=CRM_USER, password=CRM_PASSWORD
@@ -35,19 +33,17 @@ def check_sources(**context):
     cur.close()
     conn.close()
 
-    # Передаём метрики в XCom для логирования
     context['ti'].xcom_push(key='sensor_rows', value=sensor_rows)
     context['ti'].xcom_push(key='crm_rows', value=crm_rows)
     print(f"Sources OK: emg_sensor_data={sensor_rows} rows, customers={crm_rows} rows")
 
 
 def truncate_view(**context):
-    """Очищаем витрину перед полной перезагрузкой."""
     from clickhouse_driver import Client as CHClient
 
     ch = CHClient(host=CH_HOST, port=CH_PORT)
     ch.execute("TRUNCATE TABLE IF EXISTS user_reports")
-    print("Витрина user_reports очищена")
+    print("user_reports mart cleared")
 
 
 def build_report_view(**context):
@@ -60,11 +56,8 @@ def build_report_view(**context):
             user_id,
             customer_name,
             customer_email,
-            prosthesis_type,
+            prosthesis,
             total_signals,
-            avg_amplitude,
-            avg_frequency,
-            avg_duration,
             min_signal_time,
             max_signal_time,
             report_updated
@@ -73,11 +66,8 @@ def build_report_view(**context):
             e.user_id                       AS user_id,
             coalesce(c.name, 'Unknown')     AS customer_name,
             coalesce(c.email, '')           AS customer_email,
-            e.prosthesis_type               AS prosthesis_type,
+            e.prosthesis.                   AS prosthesis,
             count()                         AS total_signals,
-            round(avg(e.signal_amplitude), 2) AS avg_amplitude,
-            round(avg(e.signal_frequency), 0) AS avg_frequency,
-            round(avg(e.signal_duration), 0)  AS avg_duration,
             min(e.signal_time)              AS min_signal_time,
             max(e.signal_time)              AS max_signal_time,
             now()                           AS report_updated
@@ -93,30 +83,25 @@ def build_report_view(**context):
             e.user_id,
             c.name,
             c.email,
-            e.prosthesis_type
+            e.prosthesis
         ORDER BY
             e.user_id,
-            e.prosthesis_type
+            e.prosthesis
     """
 
     ch.execute(query)
-    print("Витрина user_reports построена")
+    print("user_reports mart prepared")
 
 
 def verify_view(**context):
-    """Проверяем, что витрина заполнена корректно."""
     from clickhouse_driver import Client as CHClient
 
     ch = CHClient(host=CH_HOST, port=CH_PORT)
-
-    # Общее количество записей
     total = ch.execute("SELECT count() FROM user_reports")[0][0]
-    assert total > 0, "Витрина user_reports пуста после ETL!"
+    assert total > 0, "user_reports mart is empty"
 
-    # Количество уникальных пользователей
     users = ch.execute("SELECT uniq(user_id) FROM user_reports")[0][0]
 
-    # Диапазон дат
     dates = ch.execute("""
         SELECT
             min(min_signal_time),
@@ -124,27 +109,16 @@ def verify_view(**context):
         FROM user_reports
     """)[0]
 
-    # Пример записи
     sample = ch.execute("""
-        SELECT user_id, customer_name, prosthesis_type,
-               total_signals, avg_amplitude
+        SELECT user_id, customer_name, prosthesis,
+               total_signals
         FROM user_reports
         ORDER BY total_signals DESC
         LIMIT 3
     """)
 
-    # Передаём метрики
     context['ti'].xcom_push(key='view_rows', value=total)
     context['ti'].xcom_push(key='view_users', value=users)
-
-    print(f"Витрина OK:")
-    print(f"  Записей:       {total}")
-    print(f"  Пользователей: {users}")
-    print(f"  Период:        {dates[0]} — {dates[1]}")
-    print(f"  Топ-3 по количеству сигналов:")
-    for row in sample:
-        print(f"    user={row[0]}, name={row[1]}, type={row[2]}, "
-              f"signals={row[3]}, avg_amp={row[4]}")
 
 default_args = {
     'owner': 'bionicpro',
@@ -155,7 +129,6 @@ default_args = {
 with DAG(
     dag_id='etl_reports',
     default_args=default_args,
-    description='ETL: CRM + телеметрия → витрина отчётов в ClickHouse',
     schedule_interval='@daily',
     start_date=datetime(2025, 1, 1),
     catchup=False,

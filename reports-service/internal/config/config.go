@@ -7,33 +7,35 @@ package config
 import (
 	"log"
 	"os"
-	"time"
 
 	yaml "gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server               ServerConf    `yaml:"server"`
-	KeycloakURL          string        `yaml:"keycloakURL"`
-	KeycloakExternalURL  string        `yaml:"keycloakExternalURL"`
-	KeycloakRealm        string        `yaml:"keycloakRealm"`
-	SessionCookieName    string        `yaml:"sessionCookieName"`
-	SessionTTLSeconds    time.Duration `yaml:"sessionTTLSeconds"`
-	StateTTLSeconds      time.Duration `yaml:"stateTTLSeconds"`
-	CleanupPeriodSeconds time.Duration `yaml:"cleanupPeriodSeconds"`
-	ClientID             string        `yaml:"clientID"`
-	ClientSecret         string        `yaml:"clientSecret"`
-	FrontendURL          string        `yaml:"frontendURL"`
-	APIBaseURL           string        `yaml:"apiBaseURL"`
-	ReportServiceURL     string        `yaml:"reportServiceURL"`
-	CallbackURL          string        `yaml:"callbackURL"`
-	AllowedOrigins       []string      `yaml:"allowedOrigins"`
-	Logger               LoggerConf    `yaml:"logger"`
+	Server  ServerConf  `yaml:"server"`
+	Storage StorageConf `yaml:"storage"`
+	Cdn     Cdn         `yaml:"cdn"`
+	Logger  LoggerConf  `yaml:"logger"`
 }
 
 type ServerConf struct {
 	Host string `yaml:"host"`
 	Port string `yaml:"port"`
+}
+
+type StorageConf struct {
+	Host  string `yaml:"host"`
+	Port  string `yaml:"port"`
+	DB    string `yaml:"db"`
+	Table string `yaml:"table"`
+}
+
+type Cdn struct {
+	S3Endpoint  string `yaml:"s3Endpoint"`
+	S3AccessKey string `yaml:"s3AccessKey"`
+	S3SecretKey string `yaml:"s3SecretKey"`
+	BaseURL     string `yaml:"baseURL"`
+	Bucket      string `yaml:"bucket"`
 }
 
 type LoggerConf struct {

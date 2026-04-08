@@ -1,14 +1,13 @@
 package httpserver
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
@@ -26,6 +25,7 @@ type Server struct {
 	host         string
 	port         string
 	server       *http.Server
+	proxy        *httputil.ReverseProxy
 	auth         *auth.AuthContext
 	logger       Logger
 	randomSource *rand.Rand
@@ -55,14 +55,32 @@ func NewServer(cfg *config.Config, auth *auth.AuthContext, logger Logger, random
 }
 
 func (s *Server) Start(ctx context.Context, host string) error {
+	downstreamURL, err := url.Parse(s.auth.Cfg.ReportServiceURL)
+	if err != nil {
+		return err
+	}
+
+	s.proxy = &httputil.ReverseProxy{
+		Rewrite: func(r *httputil.ProxyRequest) {
+			requestPath := r.In.URL.RawPath
+			requestURL := r.In.URL
+			requestURL.Scheme = downstreamURL.Scheme
+			requestURL.Host = downstreamURL.Host
+			fmt.Println(requestPath)
+			downstreamPath := strings.TrimPrefix(requestPath, "/api")
+			s.logger.Info(downstreamPath, requestURL)
+			r.SetURL(requestURL)
+		},
+	}
+
 	router := mux.NewRouter()
 
 	// Health-check handler
 	router.HandleFunc("/health", s.healthcheckHandler).Methods("GET")
 
 	// Все запросы /api/reports проксируются к downstream-сервисам с Bearer Token
-	router.HandleFunc("/api/reports", s.proxyHandler).Methods("GET")
-	router.HandleFunc("/api/reports", s.proxyHandler).Methods("POST")
+	router.HandleFunc("/reports", s.proxyHandler).Methods("GET")
+	router.HandleFunc("/reports/myreports", s.proxyHandler).Methods("GET")
 
 	// Authorization handlers
 	router.HandleFunc("/auth/login", s.loginHandler).Methods("GET")
@@ -72,8 +90,12 @@ func (s *Server) Start(ctx context.Context, host string) error {
 	// Add logging middleware
 	router.Use(s.loggingMiddleware)
 
+	// Add CORS middleware
+	router.Use(s.enableCORS(s.auth.Cfg.AllowedOrigins))
+
 	server := &http.Server{
-		Addr:              net.JoinHostPort(s.host, s.port),
+		// Addr:              net.JoinHostPort(s.host, s.port),
+		Addr:              ":" + s.port,
 		Handler:           router,
 		ReadHeaderTimeout: time.Second * 5,
 		BaseContext:       func(_ net.Listener) context.Context { return ctx },
@@ -181,133 +203,12 @@ func (s *Server) proxyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, cookie)
 
-	// 7. Проксируем запрос к downstream API с Authorization: Bearer <token>
-	// 7.1 Определяем downstream URL
-	path := r.URL.RawPath
+	// 7. Добавляем заголовки
+	r.Header.Add("X-User-Id", sessionData.UserID)
+	r.Header.Add("X-User-Roles", sessionData.Roles)
 
-	// 7.2 Убираем /api prefix при проксировании
-	downstreamPath := strings.TrimPrefix(path, "/api")
-	var downstreamBase string
-
-	if strings.HasPrefix(path, "/api/reports") {
-		downstreamBase = s.auth.Cfg.ReportServiceURL
-	} else {
-		downstreamBase = s.auth.Cfg.APIBaseURL
-	}
-
-	downstreamURL := downstreamBase + downstreamPath
-	query := r.URL.RawQuery
-	if query != "" {
-		downstreamURL = downstreamURL + "?" + query
-	}
-
-	// 7.3 Проксируем метод и тело
-	client := http.Client{}
-
-	if r.Method == http.MethodPost {
-		if r.Body != nil {
-			defer r.Body.Close()
-			reqBody, err := io.ReadAll(r.Body)
-			if err != nil {
-				s.logger.Errorf("Error reading proxied request body: %v", err)
-				http.Error(w, "Error reading proxied request body", http.StatusInternalServerError)
-				return
-			}
-
-			req, err := http.NewRequest("POST", downstreamURL, bytes.NewBuffer(reqBody))
-			if err != nil {
-				s.logger.Errorf("Error creating proxied request: %v", err)
-				http.Error(w, "Error creating proxied reques", http.StatusInternalServerError)
-				return
-			}
-
-			req.Header.Add("Content-Type", "application/json")
-
-			resp, err := client.Do(req)
-			if err != nil {
-				s.logger.Errorf("Error reading proxied response: %v", err)
-				http.Error(w, "Error reading proxied response", http.StatusInternalServerError)
-				return
-			}
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-				respBody, err := io.ReadAll(r.Body)
-				if err != nil {
-					s.logger.Errorf("Error reading proxied response body: %v", err)
-					http.Error(w, "Error reading proxied response body", http.StatusInternalServerError)
-					return
-				}
-				w.WriteHeader(resp.StatusCode)
-				w.Header().Set("Content-Type", "application/json")
-				w.Write(respBody)
-			} else {
-				w.WriteHeader(resp.StatusCode)
-			}
-		} else {
-			req, err := http.NewRequest("POST", downstreamURL, nil)
-			if err != nil {
-				s.logger.Errorf("Error creating proxied request: %v", err)
-				http.Error(w, "Error creating proxied reques", http.StatusInternalServerError)
-				return
-			}
-
-			req.Header.Add("Content-Type", "application/json")
-
-			resp, err := client.Do(req)
-			if err != nil {
-				s.logger.Errorf("Error reading proxied response: %v", err)
-				http.Error(w, "Error reading proxied response", http.StatusInternalServerError)
-				return
-			}
-
-			if resp.Body != nil {
-				defer resp.Body.Close()
-				respBody, err := io.ReadAll(r.Body)
-				if err != nil {
-					s.logger.Errorf("Error reading proxied response body: %v", err)
-					http.Error(w, "Error reading proxied response body", http.StatusInternalServerError)
-					return
-				}
-				w.WriteHeader(resp.StatusCode)
-				w.Header().Set("Content-Type", "application/json")
-				w.Write(respBody)
-			} else {
-				w.WriteHeader(resp.StatusCode)
-			}
-		}
-	} else {
-		req, err := http.NewRequest("GET", downstreamURL, nil)
-		if err != nil {
-			s.logger.Errorf("Error creating proxied request: %v", err)
-			http.Error(w, "Error creating proxied reques", http.StatusInternalServerError)
-			return
-		}
-
-		req.Header.Add("Content-Type", "application/json")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			s.logger.Errorf("Error reading proxied response: %v", err)
-			http.Error(w, "Error reading proxied response", http.StatusInternalServerError)
-			return
-		}
-
-		if resp.Body != nil {
-			defer resp.Body.Close()
-			respBody, err := io.ReadAll(r.Body)
-			if err != nil {
-				s.logger.Errorf("Error reading proxied response body: %v", err)
-				http.Error(w, "Error reading proxied response body", http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(resp.StatusCode)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(respBody)
-		} else {
-			w.WriteHeader(resp.StatusCode)
-		}
-	}
+	// 7. Проксируем запрос
+	s.proxy.ServeHTTP(w, r)
 }
 
 // GET /auth/login
