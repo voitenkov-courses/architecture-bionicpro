@@ -1,2 +1,7 @@
-/postgres-keycloak-data
-2024__yandex-architecture-sso.code-workspace
+postgres-keycloak-data
+postgres-airflow-data
+postgres-crm-data
+clickhouse-data
+*.pyc
+.DS_Store
+*.bkp

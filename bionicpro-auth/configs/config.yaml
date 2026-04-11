@@ -1,0 +1,19 @@
+server:
+  host: auth-service
+  port: "8000"
+keycloakURL: "http://keycloak:8080"
+keycloakExternalURL: "http://localhost:8080"
+keycloakRealm: "reports-realm"
+sessionCookieName: "BIONICPRO_SESSION"
+stateTTLSeconds: 300s
+sessionTTLSeconds: 1800s
+cleanupPeriodSeconds: 300s
+clientID: "reports-frontend"
+clientSecret: "change-me"
+frontendURL: "http://localhost:3000"
+apiBaseURL: "http://reports-service:8001"
+reportServiceURL: "http://reports-service:8001"
+callbackURL: http://localhost:8000/auth/callback
+allowedOrigins: ["http://localhost:3000","http://auth-service:8000"]
+logger:
+  level: debug
